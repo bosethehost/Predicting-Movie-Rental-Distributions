@@ -1,0 +1,95 @@
+import pandas as pd
+import numpy as np
+
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.metrics import mean_squared_error as MSE
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge
+from sklearn.linear_model import Lasso
+from sklearn.linear_model import PoissonRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import AdaBoostRegressor, RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+
+# Import any additional modules and start coding below
+a = pd.read_csv('rental_info.csv', parse_dates=['return_date','rental_date'])
+a['rental_length'] = a['return_date'] - a['rental_date']
+a['rental_length_days'] = a['rental_length'].dt.days
+df_rental = a.drop(['return_date','rental_date','rental_length'],axis=1)
+df_rental["deleted_scenes"] =  np.where(df_rental["special_features"].str.contains("Deleted Scenes"), 1,0)
+df_rental["behind_the_scenes"] =  np.where(df_rental["special_features"].str.contains("Behind the Scenes"), 1,0)
+g = df_rental.drop('special_features',axis=1)
+X = g.drop('rental_length_days',axis=1)
+scale = StandardScaler()
+y = g['rental_length_days']
+np.random.seed(9)
+X_train, X_test,y_train, y_test = train_test_split(X,y,test_size=0.2,random_state=9)
+scale.fit_transform(X_train)
+scale.transform(X_test)
+
+lasso = Lasso(random_state=9,alpha=0.1)
+lasso.fit(X_train,y_train)
+print(lasso.coef_)
+
+X_train_selected = X_train.iloc[:,[4,9,10]]
+X_test_selected = X_test.iloc[:,[4,9,10]]
+
+
+params_dt = { 
+             'max_depth': [1,23, 4,5, 6], 
+             'min_samples_leaf': [0.04, 0.06, 0.08], 
+             'criterion':['squared_error','friedman_mse'],
+             'max_features': [0.2, 0.4,0.6, 0.8,1],
+             'random_state': [9,]
+            }  
+grid_dt = RandomizedSearchCV(DecisionTreeRegressor(), params_dt, cv=4) 
+grid_dt.fit(X_train, y_train) 
+y_pred_dt = grid_dt.predict(X_test)
+
+params_rf = { 
+              'n_estimators': [300, 400, 500], 
+              'max_depth': [1,2,3,4, 6, 8], 
+              'min_samples_leaf': [0.1, 0.2],
+              'oob_score':[False,],
+              'max_features': ['log2', 'sqrt'],
+              'bootstrap': [True,],
+              'random_state': [9,]
+             }
+
+grid_rf = RandomizedSearchCV(RandomForestRegressor(),params_rf, cv=4)
+
+grid_rf.fit(X_train, y_train) 
+y_pred_rf = grid_rf.predict(X_test)
+
+params_gb = { 
+             'n_estimators':[300,400,500],
+             'max_depth': [1,2,3, 4,5, 6], 
+             'min_samples_leaf': [0.04, 0.06, 0.08], 
+             'max_features': [0.2, 0.4,0.6, 0.8],
+             'random_state': [9,],
+             'alpha':[0.1,0.3,0.5,0.7,0.8],
+             'criterion': ['squared_error','friedman_mse'],
+            }  
+sgbt = GradientBoostingRegressor(max_depth=1,  
+                                 subsample=0.8, 
+                                 max_features=0.2, 
+                                 n_estimators=300,              
+                                 random_state=9)  
+ 
+# Fit 'sgbt' to the training set 
+sgbt.fit(X_train, y_train) 
+ 
+# Predict the test set labels 
+y_pred_sgbt = sgbt.predict(X_test)
+
+grid_gb = RandomizedSearchCV(GradientBoostingRegressor(), params_gb, cv=4) 
+grid_gb.fit(X_train, y_train) 
+y_pred_gb = grid_gb.predict(X_test)
+mse_dt = MSE(y_test,y_pred_dt)
+mse_rf = MSE(y_test,y_pred_rf)
+mse_gb = MSE(y_test,y_pred_gb)
+mse_sgbt = MSE(y_test,y_pred_sgbt)
+
+best_model = GradientBoostingRegressor()
+best_mse = mse_gb
